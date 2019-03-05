@@ -1,0 +1,227 @@
+//include "stdafx.h"
+#include "cmath"
+#include "iostream"
+#include "ctime"
+#include "iomanip"
+#include "stdio.h"
+#include "stdlib.h"
+#include "mpi.h"  //wszystkie funkcje biblioteczne dostepne sa przez naglowek
+using namespace std;
+
+#define MASTER 0
+#define ileWierszy 4 //definiuje liczbe wierszy na 4
+#define ileKolumn 4 // definiuje liczbe kolumn na 4
+#define cykl 1000  //  definiuje cykl na 1000
+int main(int argc, char* argv[])
+{
+    //Przed wywo³aniem MPI_Init nie wolno wywo³ywaæ ¿adnych funkcji MPI
+	MPI_Init(&argc, &argv);
+	//MPI_Request req;
+	int rank, size, length, test;
+	//int new_rank;
+
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);   // zwraca range procesu, czyli jego indetyfikatora
+	MPI_Comm_size(MPI_COMM_WORLD, &size);  //  zwraca liczbe procesow
+	//MPI_Status status;
+
+	int *dim = new int[2];      //tablica wielkosci wymiaru
+	int *periods = new int[2]; // tablica periodycznosci
+	int *coord = new int[2];  //  tablica wspolrzednych procesorów
+	int reorder;
+	
+	dim[0] = ileWierszy;   //okreslam w pierwszym elemencie wymiar dla wierszy
+	dim[1] = ileKolumn;   // okreslam w drugim elemencie wymiar dla kolumn
+	periods[0] = true;   //  okreslam czy ma byc periodyczny
+	periods[1] = true;  //   okreslam czy ma byc periodyczny
+	reorder = true;    //    jesli true numeracja procesorow moze byc zmieniona w tworzonym komunikatorze wzgledem wejsciowego komunikatora
+    
+    //Wszystkie funkcje MPI (za wyjatkiem MPI_Wtime oraz MPI_Wtick s³u¿¹cych do pomiaru czasu) zwracaj¹ kod powrotu informuj¹cy o wyniku operacji.
+	double time = MPI_Wtime();
+	
+	MPI_Comm new_comm;                 //tworze nowy komunikator
+	int tab[ileKolumn][ileWierszy];   // tworze tablice glowna
+	int tabp[ileKolumn][ileWierszy]; //  tworze tablice pomocnicza
+	
+	time = MPI_Wtime() - time;
+	//pentle for, w ktore do tablicy glownej i pomocniczej, wpisuje zer do tab i tabp
+	for (int i = 0; i < ileWierszy; i++) {
+	   for (int j = 0; j < ileKolumn; j++) {
+		tab[i][j] =  0;
+		tabp[i][j] = 0;
+	   }
+	} 
+	
+    /*
+     MPI_Cart_create - stworzenie topologii
+     na poczatku dajemy komunikator wejsciowy, nastepnie liczbe wymiarow siatki, dim to tablica z rozmiarami siatki w kazdym z wymiarow,
+     periods to talica logiczna okreœlaj¹ca warunki brzegowe dla kazdego z wymiarow,
+     reorder jesli true numeracja procesorow moze byc zmieniona w tworzonym komunikatorze wzgledem wejsciowego komunikatora,
+     new_comm komunikator o topologii kartezjanskiej powstaly w wyniku wykonania procedury
+     */
+	MPI_Cart_create(MPI_COMM_WORLD, 2, dim, periods, reorder, &new_comm);
+	
+    //ustawienie konkretnych komorek do zycia "time step 1"
+    /*
+        Pobranie wspó³rzêdnych kartezjañskich procesorów w nowym komunikatorze kartezjañskim
+        MPI_Cart_coords
+        W moim przypadku ustalam jak¹ maj¹ mieæ wartoœæ.
+     */
+	MPI_Cart_coords(new_comm, rank, 2, coord);
+	if(coord[0]==1 && coord[1]==1)
+	{
+		tab[coord[0]][coord[1]] = 1;
+	}
+		if(coord[0]==2 && coord[1]==2)
+	{
+		tab[coord[0]][coord[1]] = 1;
+	}
+		if(coord[0]==3 && coord[1]==2)
+	{
+		tab[coord[0]][coord[1]] = 1;
+	}
+		if(coord[0]==3 && coord[1]==1)
+	{
+		tab[coord[0]][coord[1]] = 1;
+	}
+		if(coord[0]==2 && coord[1]==3)
+	{
+		tab[coord[0]][coord[1]] = 1;
+	}
+    
+    /*
+     Allreduce(wysyla, odbiera, rozmiar, typ, co ma zrobic, komunikator);
+     MPI_SUM - sumuje elementy.
+     Czyli w moim przypadku: wysylam wyniki z tablicy glownej, odbieram wyniki w tablicy pomocniczej, ustalam rozmiar, ustalam typ na int, ma sumowac wyniki, komunikator umozliwia
+     */
+	MPI_Allreduce(&tab, &tabp, size, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+//	if(rank == 0){
+//		for(int i = 0; i <ileKolumn; i ++ ){
+//			for(int j = 0; j <ileWierszy; j++){		
+//				cout << tab[i][j] << " ";
+//			}
+//			cout << endl;
+//		}
+//		cout << endl;
+//	}
+
+        //urochomi sie tylko przypadku 16 nodów
+		if(size == 16){
+            //pentla od ilosci cyk³ów
+			for(int k=0; k<cykl; k++){
+                /*
+                 Pobranie wspó³rzêdnych kartezjañskich procesorów w nowym komunikatorze kartezjañskim
+                 MPI_Cart_coords
+                 */
+			MPI_Cart_coords(new_comm, rank, 2, coord);
+			
+			int i = coord[0];
+			int j = coord[1];
+				
+						int LicznikZywychSasiadow = 0;              //zmienna do przechowywania liczbe zywych sasiadow
+						int top = 0, right= 0, bottom=0, left=0;   // zmienne kierunkowe.
+						
+						//Okreœlenie jak ma zachowywaæ siê zmienna left. 
+						if (i == 0) { left = ileKolumn - 1; }
+						else left = i - 1;
+						//Okreœlenie jak ma zachowywaæ siê zmienna right. 
+						if (i == ileKolumn - 1) { right = 0; }
+						else right = i + 1;
+						//Okreœlenie jak ma zachowywaæ siê zmienna top. 
+						if (j == 0) { top = ileWierszy - 1; }
+						else top = j - 1;
+						//Okreœlenie jak ma zachowywaæ siê zmienna bottom. 
+						if (j == ileWierszy - 1) { bottom = 0; }
+						else bottom = j + 1;
+						
+						//Jeœli tablica g³ówna i od top jest równe 1(czyli s¹siad z góry) to wtedy zmienna LicznikZywychSasiadów + 1.
+						if (tab[i][top] == 1) { LicznikZywychSasiadow++; }
+						//Jeœli tablica g³ówna right od top jest równe 1(czyli s¹siad z prawej góry(skos)) to wtedy zmienna LicznikZywychSasiadów + 1.
+						if (tab[right][top] == 1) { LicznikZywychSasiadow++; }
+						//Jeœli tablica g³ówna right od j jest równe 1(czyli s¹siad z prawej) to wtedy zmienna LicznikZywychSasiadów + 1.
+						if (tab[right][j] == 1) { LicznikZywychSasiadow++; }
+						//Jeœli tablica g³ówna right od bottom jest równe 1(czyli s¹siad z prawego do³u (skos)) to wtedy zmienna LicznikZywychSasiadów + 1.
+						if (tab[right][bottom] == 1) { LicznikZywychSasiadow++; }
+						//Jeœli tablica g³ówna i od bottom jest równe 1(czyli s¹siad z do³u) to wtedy zmienna LicznikZywychSasiadów + 1.
+						if (tab[i][bottom] == 1) { LicznikZywychSasiadow++; }
+						//Jeœli tablica g³ówna left od bottom jest równe 1(czyli s¹siad lewy dó³(skos)) to wtedy zmienna LicznikZywychSasiadów + 1.
+						if (tab[left][bottom] == 1) { LicznikZywychSasiadow++; }
+						//Jeœli tablica g³ówna left od j jest równe 1(czyli s¹siad z lewej) to wtedy zmienna LicznikZywychSasiadów + 1.
+						if (tab[left][j] == 1) { LicznikZywychSasiadow++; }
+						//Jeœli tablica g³ówna left od top jest równe 1(czyli s¹siad z lewej góry(skos)) to wtedy zmienna LicznikZywychSasiadów + 1.
+						if (tab[left][top] == 1) { LicznikZywychSasiadow++; }
+							/*
+							Jeœli tablica g³ówna i od j jest równe 1 i zmienna ZywychSasiadow wynosi 3 lub 2 to wtedy
+							wchodzimy do warunku
+							*/
+							if ((tab[i][j] == 1) && ((LicznikZywychSasiadow == 3) || (LicznikZywychSasiadow == 2)) ) 
+							{
+									/*
+									Jeœli zmienna k, i jest równe 1, a zmienna j jest równa 2, to wtedy
+									do tablicy pomocniczej przypisujemy wartoœæ 1. 
+									*/
+									if(k == 1 && i==1 && j == 2)	
+									tabp[i][j] = 1;
+							}		//Jeœli warunek wczeœniejszy siê nie spe³ni to wchodzimy do "else"	
+							else {
+									/*
+									Jeœli tablica g³ówna i od j jest równa 0 i zmienna LicznikZywychSawiadow jest równa 3
+									to wchodzimy do warunku
+									*/
+								if ((tab[i][j] == 0) && LicznikZywychSasiadow == 3) 
+								{	
+									//Przypisujemy tablicy pomocniczej wartoœæ 1. 
+									tabp[i][j] = 1;
+								}	//Jeœli warunek wczeœniejszy siê nie spe³ni to wchodzimy do "else"	
+								else{
+									//Przypisujemy tablicy pomocniczej wartoœæ 0.	
+									tabp[i][j] = 0;
+								} 
+							}
+                /*
+                 Allreduce(wysyla, odbiera, rozmiar, typ, co ma zrobic, komunikator);
+                MPI_SUM - sumuje elementy.
+                Czyli w moim przypadku: wysylam wyniki z tablicy pomocniczej, odbieram wyniki w tablicy glownej, ustalam rozmiar, ustalam typ na int, ma sumowac wyniki, komunikator umozliwia
+                 */
+                MPI_Allreduce(&tabp, &tab, size, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+					//przypisanie tablicy pomocniczej do tablicy g³ównej
+					for (int i = 0; i < ileWierszy; i++) {  
+					   for (int j = 0; j < ileKolumn; j++) {
+						tab[i][j] = tabp[i][j];
+					   }
+					}			
+				}
+        //W trybie MPI_Gather tylko prcoes g³ówny musi mieæ poprawny bufor odbiorczy. Wszystkie inne procesy wywo³uj¹ce mog¹ przekazaæ wartoœæ NULL dla parametru recv_data.
+        //MPI_Gather(void* send_data, int send_count,MPI_Datatype send_datatpe, void* recv_data, int recv_count, MPI_Datatype recv_datatype, int root, MPI_Comm communicator);
+				
+			
+		}
+	
+	cout <<endl<<endl;
+	//Wypisanie tekstu w konsoli
+	cout<<" tab na koncu"<<endl; 
+	//Wypisanie tablicy g³ównej 
+	for (int i = 0; i < ileWierszy; i++) {
+	   cout << endl;
+	   for (int j = 0; j < ileKolumn; j++) {
+		cout<< tab[i][j] << " ";
+	   }
+	}
+	
+	//Wypisanie tekstu w konsoli
+	cout<<" tabp na koncu"<<endl;
+	//Wypisanie tablicy pomocniczej 
+	for (int i = 0; i < ileWierszy; i++) {
+	   cout << endl;
+	   for (int j = 0; j < ileKolumn; j++) {
+		cout<< tabp[i][j] << " ";
+	   }
+	}
+	//Wypisanie czasu na konsole
+	cout<<"TIME: "<<time<<endl;
+    //Przed wywo³aniem MPI_Finaliza nale¿y zadbaæ o to, aby wszystkie wys³ane komunikaty zosta³y odebrane
+    MPI_Finalize();
+    //Po wywo³aniu MPI_Finalize nie wolno wywo³ywæ ¿adnych funkcji MPI!
+
+}
+
